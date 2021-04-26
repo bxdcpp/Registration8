@@ -102,6 +102,51 @@
 //  The following section of code implements a Command observer
 //  that will monitor the evolution of the registration process.
 //
+using InputImageType = itk::Image<float, 4>;
+using FixedVolumeReaderType = itk::ImageFileReader<InputImageType>;
+using MovingVolumeReaderType = itk::ImageFileReader<InputImageType>;
+
+
+template <typename ImageType>
+typename ImageType::Pointer
+ExtractImage(typename InputImageType::Pointer & inputImage, unsigned int InputImageTimeIndex)
+{
+	using ExtractImageFilterType = typename itk::ExtractImageFilter<InputImageType, ImageType>;
+	typename ExtractImageFilterType::Pointer extractImageFilter = ExtractImageFilterType::New();
+	extractImageFilter->SetDirectionCollapseToSubmatrix();
+
+	// fixedVolumeReader->GetOutput();
+	InputImageType::RegionType inputRegion = inputImage->GetLargestPossibleRegion();
+	InputImageType::SizeType   inputSize = inputRegion.GetSize();
+	inputSize[3] = 0;
+	inputRegion.SetSize(inputSize);
+
+	InputImageType::IndexType inputIndex = inputRegion.GetIndex();
+	inputIndex[0] = 0;
+	inputIndex[1] = 0;
+	inputIndex[2] = 0;
+	inputIndex[3] = InputImageTimeIndex;
+	inputRegion.SetIndex(inputIndex);
+	extractImageFilter->SetExtractionRegion(inputRegion);
+	extractImageFilter->SetInput(inputImage);
+
+	try
+	{
+		extractImageFilter->Update();
+	}
+	catch (...)
+	{
+		std::cout << "Error while extracting a time indexed fixed image." << std::endl;
+		throw;
+	}
+
+	typename ImageType::Pointer extractImage = extractImageFilter->GetOutput();
+	//  std::cerr << "Extract fixed image origin" << extractImage->GetOrigin() << std::endl;
+
+	return extractImage;
+}
+
+
 
 int
 main(int argc, char * argv[])
@@ -131,14 +176,48 @@ main(int argc, char * argv[])
 
 	using FixedImageReaderType = itk::ImageFileReader<FixedImageType>;
 	using MovingImageReaderType = itk::ImageFileReader<MovingImageType>;
-	FixedImageReaderType::Pointer  fixedImageReader = FixedImageReaderType::New();
-	MovingImageReaderType::Pointer movingImageReader = MovingImageReaderType::New();
+	//FixedImageReaderType::Pointer  fixedImageReader = FixedImageReaderType::New();
+	//MovingImageReaderType::Pointer movingImageReader = MovingImageReaderType::New();
 
-	fixedImageReader->SetFileName(argv[1]);
-	movingImageReader->SetFileName(argv[2]);
+	//fixedImageReader->SetFileName(argv[1]);
+	//movingImageReader->SetFileName(argv[2]);
 
-	registration->SetFixedImage(fixedImageReader->GetOutput());
-	registration->SetMovingImage(movingImageReader->GetOutput());
+	//registration->SetFixedImage(fixedImageReader->GetOutput());
+	//registration->SetMovingImage(movingImageReader->GetOutput());
+	FixedImageType::Pointer  extractFixedVolume;
+	MovingImageType::Pointer extractMovingVolume;
+
+	unsigned int fixedVolumeTimeIndex = 0;
+	unsigned int movingVolumeTimeIndex = 0;
+	FixedVolumeReaderType::Pointer fixedVolumeReader = FixedVolumeReaderType::New();
+	fixedVolumeReader->SetFileName(argv[1]);
+	fixedVolumeReader->Update();
+	InputImageType::Pointer   OriginalFixedVolume(fixedVolumeReader->GetOutput());
+
+	std::cout << "Original Fixed image origin" << OriginalFixedVolume->GetOrigin() << std::endl;
+	// fixedVolumeTimeIndex lets lets us treat 3D as 4D.
+	/***********************
+	* Acquire Fixed Image Index
+	**********************/
+	extractFixedVolume = ExtractImage<FixedImageType>(OriginalFixedVolume, fixedVolumeTimeIndex);
+	// Extracting a timeIndex cube from the moving image goes here....
+
+	MovingVolumeReaderType::Pointer movingVolumeReader = MovingVolumeReaderType::New();
+	movingVolumeReader->SetFileName(argv[2]);
+	movingVolumeReader->Update();
+
+	InputImageType::Pointer OriginalMovingVolume(movingVolumeReader->GetOutput());
+	// This default lets us treat 3D as 4D.
+	// const unsigned int movingVolumeTimeIndex;
+
+	/***********************
+	* Acquire Moving Image Index
+	**********************/
+	extractMovingVolume = ExtractImage<MovingImageType>(OriginalMovingVolume, movingVolumeTimeIndex);
+
+	registration->SetFixedImage(extractFixedVolume);
+	registration->SetMovingImage(extractMovingVolume);
+
 
 	registration->SetupRegistration();
 	try
