@@ -15,6 +15,7 @@
 #include <itkImageSource.h>
 #include <itkVTKImageToImageFilter.h>
 #include "itkCastImageFilter.h"
+#include "itkAffineTransform.h"
 
 // VTK include
 //#include <vtkSmartPointer.h>
@@ -68,10 +69,14 @@ namespace  itk {
 		using MetricType =
 			itk::MattesMutualInformationImageToImageMetricv4<FixedImageType, MovingImageType, FixedImageType, RealType>;
 
-
+		using AffineRegistrationType = itk::ImageRegistrationMethodv4<FixedImageType, MovingImageType>;
+		using AffineTransformType = itk::AffineTransform<RealType, 3>;
+		using SamplingStrategyType = AffineRegistrationType::MetricSamplingStrategyType;
 
 		using RegistrationType =
-			itk::ImageRegistrationMethodv4<FixedImageType, MovingImageType, TransformType>;
+			itk::ImageRegistrationMethodv4<FixedImageType, MovingImageType>;
+		/*using RegistrationType =
+			itk::ImageRegistrationMethodv4<FixedImageType, MovingImageType, TransformType>;*/
 
 		using TransformInitializerType =
 			itk::CenteredTransformInitializer<TransformType, FixedImageType, MovingImageType>;
@@ -99,6 +104,9 @@ namespace  itk {
 		/** Set/Get the Moving image. */
 		itkSetObjectMacro(MovingImage, MovingImageType);
 		itkGetConstObjectMacro(MovingImage, MovingImageType);
+
+		itkSetMacro(SamplingStrategy, SamplingStrategyType);
+		itkGetConstMacro(SamplingStrategy, SamplingStrategyType);
 
 		void SetupRegistration();
 		int  RunRegistration();
@@ -133,6 +141,47 @@ namespace  itk {
 		RegistrationType::Pointer m_Registration;
 		OptimizerType::Pointer    m_Optimizer;
 		TransformType::Pointer    m_transform;
+
+		RealType     m_SamplingPercentage{ 1 };
+		unsigned int m_NumberOfHistogramBins{ 50 };
+		bool         m_HistogramMatch{ false };
+		float        m_RemoveIntensityOutliers{ 0.00 };
+		unsigned int m_NumberOfMatchPoints{ 10 };
+
+		// INFO:  Would be better to have unsigned int
+		std::vector<int>             m_NumberOfIterations;
+		double                       m_MaximumStepLength{ 0.2 };
+		std::vector<double>          m_MinimumStepLength;
+		double                       m_RelaxationFactor{ 0.5 };
+		double                       m_TranslationScale{ 1000.0 };
+		double                       m_ReproportionScale{ 1.0 };
+		double                       m_SkewScale{ 1.0 };
+		double                       m_BackgroundFillValue{ 0.0 };
+		std::vector<std::string>     m_TransformType;
+		std::string                  m_InitializeTransformMode;
+		double                       m_MaskInferiorCutOffFromCenter{ 1000 };
+		std::vector<int>             m_SplineGridSize;
+		double                       m_CostFunctionConvergenceFactor{ 1e+9 };
+		double                       m_ProjectedGradientTolerance{ 1e-5 };
+		double                       m_MaxBSplineDisplacement{ 0.0 };
+		unsigned int                 m_ActualNumberOfIterations{ 0 };
+		unsigned int                 m_PermittedNumberOfIterations{ 0 };
+		unsigned int                 m_DebugLevel{ 0 };
+
+		bool                         m_DisplayDeformedImage{ false };
+		bool                         m_PromptUserAfterDisplay{ false };
+		double                       m_FinalMetricValue{ 0.0 };
+		bool                         m_ObserveIterations{ false };
+		typename MetricType::Pointer m_CostMetricObject;
+//		bool                         m_UseROIBSpline{ false };
+		bool                         m_InitializeRegistrationByCurrentGenericTransform{ true };
+		int                          m_MaximumNumberOfEvaluations{ 900 };
+		int                          m_MaximumNumberOfCorrections{ 12 };
+		std::string                  m_SyNMetricType;
+		std::string                  m_SaveState;
+		bool                         m_SyNFull{ true };
+		SamplingStrategyType m_SamplingStrategy;
+
 
 	};
 }

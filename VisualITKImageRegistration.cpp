@@ -1,4 +1,5 @@
 ﻿#include "VisualITKImageRegistration.h"
+#include "itkImageRegistrationMethodv4.h"
 
 
 
@@ -61,35 +62,19 @@ namespace itk
 	void VisualITKImageRegistration::SetupRegistration()
 	{
 		MetricType::Pointer       metric = MetricType::New();
+		//指定用于计算熵的箱数，一般设置50，这个值能对优化器产生显著影响
 		metric->SetNumberOfHistogramBins(50);
+		//为了计算图像梯度，使用了一个基于图像函数的图像梯度计算器来代替图像梯度滤波器。
+		//图像梯度方法在超类ImageToImageMetricv4中定义
+		//所以设置为false
 		metric->SetUseMovingImageGradientFilter(false);
 		metric->SetUseFixedImageGradientFilter(false);
+		//禁用采样，使用Fixed空间的所有像素
 		metric->SetUseSampledPointSet(false);
 
-
-		//MIMetricType::Pointer localCostMetric = dynamic_cast<MIMetricType *>(metric);
-		//localCostMetric->SetFixedImage(m_FixedImage);
-		//localCostMetric->SetMovingImage(m_MovingImage);
-		//localCostMetric->SetVirtualDomainFromImage(m_FixedImage);
-
-		////	using MIMetricType =
-		////	itk::MattesMutualInformationImageToImageMetricv4<FixedImageType, MovingImageType, FixedImageType, RealType>;
-		////MIMetricType::Pointer mutualInformationMetric = MIMetricType::New();
-		////// The next line was a hack for early ITKv4 mattes mutual informaiton
-		////// that was using a lot of memory
-		////// mutualInformationMetric->SetMaximumNumberOfThreads(std::min(
-		////// 3U,itk::MultiThreaderBase::GetGlobalDefaultNumberOfThreads() ) );
-		////mutualInformationMetric->SetNumberOfHistogramBins(this->m_NumberOfHistogramBins);
-		////mutualInformationMetric->SetUseMovingImageGradientFilter(gradientfilter);
-		////mutualInformationMetric->SetUseFixedImageGradientFilter(gradientfilter);
-		////mutualInformationMetric->SetUseSampledPointSet(false);
-		////metric = mutualInformationMetric;
-
-		/*this->SetupRegistration<MIMetricType>(metric);
-		this->RunRegistration<MIMetricType>();
-*/
-
-
+		metric->SetFixedImage(m_FixedImage);
+		metric->SetMovingImage(m_MovingImage);
+		metric->SetVirtualDomainFromImage(m_FixedImage);
 
 
 
@@ -106,20 +91,42 @@ namespace itk
 		m_Registration->SetMovingImage(m_MovingImage);
 
 		TransformInitializerType::Pointer initializer = TransformInitializerType::New();
-		initializer->SetTransform(initialTransform);
+
+		using FixedImageCalculatorType = typename itk::ImageMomentsCalculator<FixedImageType>;
+		typename FixedImageCalculatorType::Pointer fixedCalculator = FixedImageCalculatorType::New();
+		fixedCalculator->SetImage(m_FixedImage);
+		fixedCalculator->Compute();
+		typename FixedImageCalculatorType::VectorType fixedCenter = fixedCalculator->GetCenterOfGravity();
+
+		const unsigned int                     numberOfFixedParameters = initialTransform->GetFixedParameters().Size(); // =3
+		typename TransformType::ParametersType fixedParameters(numberOfFixedParameters);
+		for (unsigned int i = 0; i < numberOfFixedParameters; ++i)
+		{
+			fixedParameters[i] = fixedCenter[i];
+		}
+		initialTransform->SetFixedParameters(fixedParameters);
+
+
+
+	/*	initializer->SetTransform(initialTransform);
 		initializer->SetFixedImage(m_FixedImage);
 		initializer->SetMovingImage(m_MovingImage);
 		initializer->MomentsOn();
-		initializer->InitializeTransform();
+		initializer->InitializeTransform();*/
 
-		VersorType rotation;
-		VectorType axis;
-		axis[0] = 0.0;
-		axis[1] = 0.0;
-		axis[2] = 1.0;
-		constexpr double angle = 0;
-		rotation.Set(axis, angle);
-		initialTransform->SetRotation(rotation);
+	
+
+
+
+
+		/*	VersorType rotation;
+			VectorType axis;
+			axis[0] = 0.0;
+			axis[1] = 0.0;
+			axis[2] = 1.0;
+			constexpr double angle = 0;
+			rotation.Set(axis, angle);
+			initialTransform->SetRotation(rotation);*/
 
 		m_Registration->SetInitialTransform(initialTransform);
 
@@ -133,10 +140,24 @@ namespace itk
 		optimizerScales[5] = translationScale;
 		m_Optimizer->SetScales(optimizerScales);
 		m_Optimizer->SetNumberOfIterations(1500);
-		m_Optimizer->SetLearningRate(0.2);
+		//m_Optimizer->SetLearningRate(0.2);
+		//最小步长
 		m_Optimizer->SetMinimumStepLength(0.001);
 		m_Optimizer->SetReturnBestParametersAndValue(true);
 
+		//学习速率，大值会使优化器不稳定，太小迭代次数太多,很可能在{1.0,5.0}的范围内
+		//一旦调整了其他注册参数以产生收敛性，您可能需要重新访问学习速率，并开始增加其值，
+		//直到您观察到优化变得不稳定。该参数的理想值是导致最小的迭代次数，
+		//同时仍然在优化的参数空间上保持稳定的路径。
+		//请记住，这个参数是一个应用于度规梯度的乘法因子。
+		//因此，它对优化器步长的影响与度量值本身成正比。具有大值的度量将需要您对学习速率使用较小的值，以保持类似的优化器行为。
+		m_Optimizer->SetLearningRate(0.05);
+		//每当规则的步长梯度下降优化器在参数空间中遇到运动方向的变化时，
+		//它就会减小步长的大小。步长的速率由松弛因子控制。该系数的默认值为0.5
+		m_Optimizer->SetRelaxationFactor(0.5);
+
+		m_Optimizer->SetGradientMagnitudeTolerance(1e-4);
+		m_Optimizer->SetReturnBestParametersAndValue(true);
 		// Create the Command observer and register it with the m_Optimizer.
 		//
 		CommandIterationUpdate::Pointer observer = CommandIterationUpdate::New();
@@ -156,7 +177,39 @@ namespace itk
 
 		m_Registration->SetNumberOfLevels(numberOfLevels);
 		m_Registration->SetSmoothingSigmasPerLevel(smoothingSigmasPerLevel);
+		//设置收缩因子
 		m_Registration->SetShrinkFactorsPerLevel(shrinkFactorsPerLevel);
+		m_Registration->SetSmoothingSigmasAreSpecifiedInPhysicalUnits(true);
+		/*shrinkFactorsPerDimensionForAllLevels[level] = {1,1,1}*/
+		using ShrinkFactorsPerDimensionContainerType = typename RegistrationType::ShrinkFactorsPerDimensionContainerType;
+		ShrinkFactorsPerDimensionContainerType shrinkFactorsPerDimension(3);
+		shrinkFactorsPerDimension.Fill(1);
+		//为每层设置收缩系数
+		m_Registration->SetShrinkFactorsPerDimension(0, shrinkFactorsPerDimension);
+
+		/*std::string metricSamplingStrategy = "Random";
+		this->SetSamplingStrategy(metricSamplingStrategy);*/
+		//抽样策略 
+		m_Registration->SetMetricSamplingStrategy(
+			typename RegistrationType::MetricSamplingStrategyType::RANDOM);
+		//抽样百分比
+		m_Registration->SetMetricSamplingPercentage(0.002);
+		//空间点集是伪随机生成的。对于可重复的结果，应该设置一个整数种子。
+		m_Registration->MetricSamplingReinitializeSeed(121212);
+
+
+
+
+//		m_Registration->SetReproportionScale(this->m_ReproportionScale)
+		//m_Registration->SetSamplingStrategy(m_SamplingStrategy);
+		//m_Registration->SetSamplingStrategy("RANDOM");
+//		m_Registration->SetRelaxationFactor(m_RelaxationFactor);
+//		m_Registration->SetMaximumStepLength(m_MaximumStepLength);
+		//m_Registration->SetSkewScale(m_SkewScale);
+//		m_Registration->SetBackgroundFillValue(m_BackgroundFillValue);
+//		m_Registration->SetDisplayDeformedImage(m_DisplayDeformedImage);
+		//m_Registration->Initialize();
+
 
 	}
 	int  VisualITKImageRegistration::RunRegistration()
@@ -208,10 +261,17 @@ namespace itk
 			std::cout << " Iterations    = " << numberOfIterations << std::endl;
 			std::cout << " Metric value  = " << bestValue << std::endl;
 
+			const TransformType::ParametersType fiexdParameters = m_Registration->GetOutput()->Get()->GetFixedParameters();
+			size_t n = fiexdParameters.size();
+			for (int i= 0; i < n; i++)
+			{
+				std::cout << "fixedParameters:" << "[" << i << "," << fiexdParameters[i] << "]" << std::endl;
+			}
+		
 
-			m_transform->SetFixedParameters(
-				m_Registration->GetOutput()->Get()->GetFixedParameters());
-			m_transform->SetParameters(finalParameters);
+				m_transform->SetFixedParameters(
+					m_Registration->GetOutput()->Get()->GetFixedParameters());
+				m_transform->SetParameters(finalParameters);
 
 
 			// Software Guide : BeginCodeSnippet
