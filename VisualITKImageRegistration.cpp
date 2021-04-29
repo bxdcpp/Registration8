@@ -86,9 +86,12 @@ namespace itk
 		m_Registration->SetOptimizer(m_Optimizer);
 
 
-		TransformType::Pointer initialTransform = TransformType::New();
+
 		m_Registration->SetFixedImage(m_FixedImage);
 		m_Registration->SetMovingImage(m_MovingImage);
+
+		TransformType::Pointer initialTransform = TransformType::New();
+
 
 		TransformInitializerType::Pointer initializer = TransformInitializerType::New();
 
@@ -104,9 +107,53 @@ namespace itk
 		{
 			fixedParameters[i] = fixedCenter[i];
 		}
+
+	/*	using MatrixType = itk::Matrix<double, 3 + 1, 3 + 1>;
+		MatrixType matrix;
+		matrix[0][0] = 0.993739;
+		matrix[0][1] = -0.110005;
+		matrix[0][2] = -0.0195393;
+
+		matrix[1][0] = 0.111443;
+		matrix[1][1] = 0.988404;
+		matrix[1][2] = 0.103137;
+
+		matrix[2][0] = 0.00796706;
+		matrix[2][1] = -0.104669;
+		matrix[2][2] = 0.994475;
+
+		matrix[0][3] = 18;
+		matrix[1][3] = -8.0;
+		matrix[2][3] = -8.0;*/
+
+		/*	Matrix =
+				0.993739 - 0.110005 - 0.0195393
+				0.111443 0.988404 0.103137
+				0.00796706 - 0.104669 0.994475
+
+				Offset =
+				[20.5706, -8.92841, -8.23361]*/
+
+
+
+		// get transform parameters from MatrixType
+		/*TransformType::ParametersType parameters(3 * 3 + 3);
+		for (unsigned int i = 0; i < 3; i++)
+		{
+			for (unsigned int j = 0; j < 3; j++)
+			{
+				parameters[i * 3 + j] = matrix[i][j];
+			}
+		}
+		for (unsigned int i = 0; i < 3; i++)
+		{
+			parameters[i + 3 * 3] = matrix[i][3];
+		}*/
+		//initialTransform->SetParameters(parameters);
+
 		initialTransform->SetFixedParameters(fixedParameters);
 
-
+		std::cout <<"Parameters:"<< initialTransform->GetParameters().size() << std::endl;
 
 	/*	initializer->SetTransform(initialTransform);
 		initializer->SetFixedImage(m_FixedImage);
